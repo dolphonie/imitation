@@ -4,7 +4,7 @@ import collections
 import dataclasses
 import logging
 from typing import Callable, Dict, Hashable, List, Mapping, Optional, Sequence, Union
-
+from stable_baselines.common import BaseRLModel
 import numpy as np
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.policies import BasePolicy
@@ -266,7 +266,8 @@ def _policy_to_callable(
             acts = [venv.action_space.sample() for _ in range(len(states))]
             return np.stack(acts, axis=0)
 
-    elif isinstance(policy, (BaseAlgorithm, BasePolicy)):
+    # patrick edit: accept baserlmodel from sb2
+    elif isinstance(policy, (BaseAlgorithm, BasePolicy, BaseRLModel)):
         # There's an important subtlety here: BaseAlgorithm and BasePolicy
         # are themselves Callable (which we check next). But in their case,
         # we want to use the .predict() method, rather than __call__()

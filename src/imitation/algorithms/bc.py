@@ -295,7 +295,8 @@ class BC(algo_base.DemonstrationAlgorithm):
         log_prob = log_prob.mean()
         entropy = entropy.mean()
 
-        l2_norms = [th.sum(th.square(w)) for w in self.policy.parameters()]
+        # patrick edit: square to mul for pytorch version
+        l2_norms = [th.sum(th.mul(w, w)) for w in self.policy.parameters()]
         l2_norm = sum(l2_norms) / 2  # divide by 2 to cancel with gradient of square
 
         ent_loss = -self.ent_weight * entropy

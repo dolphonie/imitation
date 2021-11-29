@@ -637,6 +637,12 @@ class SimpleDAggerTrainer(DAggerTrainer):
                     "dagger/mean_episode_reward",
                     np.sum(traj.rews),
                 )
+                # patrick edit: also record success rate for expert trajs (if any step returns sucess)
+                successful = float(np.any([step["is_success"] for step in traj.infos]))
+                self._logger.record_mean(
+                    "dagger/mean_episode_success",
+                    successful
+                )
                 round_timestep_count += len(traj)
                 total_timestep_count += len(traj)
 

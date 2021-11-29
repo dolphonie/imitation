@@ -20,8 +20,8 @@ from imitation.util import logger
 
 
 def reconstruct_policy(
-    policy_path: str,
-    device: Union[th.device, str] = "auto",
+        policy_path: str,
+        device: Union[th.device, str] = "auto",
 ) -> policies.BasePolicy:
     """Reconstruct a saved policy.
 
@@ -73,13 +73,13 @@ class EpochOrBatchIteratorWithProgress:
     """
 
     def __init__(
-        self,
-        data_loader: Iterable[algo_base.TransitionMapping],
-        n_epochs: Optional[int] = None,
-        n_batches: Optional[int] = None,
-        on_epoch_end: Optional[Callable[[], None]] = None,
-        on_batch_end: Optional[Callable[[], None]] = None,
-        progress_bar_visible: bool = True,
+            self,
+            data_loader: Iterable[algo_base.TransitionMapping],
+            n_epochs: Optional[int] = None,
+            n_batches: Optional[int] = None,
+            on_epoch_end: Optional[Callable[[], None]] = None,
+            on_batch_end: Optional[Callable[[], None]] = None,
+            progress_bar_visible: bool = True,
     ):
         """Builds EpochOrBatchIteratorWithProgress.
 
@@ -115,7 +115,7 @@ class EpochOrBatchIteratorWithProgress:
         self.progress_bar_visible = progress_bar_visible
 
     def __iter__(
-        self,
+            self,
     ) -> Iterable[Tuple[algo_base.TransitionMapping, Mapping[str, Any]]]:
         """Yields batches while updating tqdm display to display progress."""
         samples_so_far = 0
@@ -184,19 +184,19 @@ class BC(algo_base.DemonstrationAlgorithm):
     """
 
     def __init__(
-        self,
-        *,
-        observation_space: gym.Space,
-        action_space: gym.Space,
-        policy: Optional[policies.BasePolicy] = None,
-        demonstrations: Optional[algo_base.AnyTransitions] = None,
-        batch_size: int = 32,
-        optimizer_cls: Type[th.optim.Optimizer] = th.optim.Adam,
-        optimizer_kwargs: Optional[Mapping[str, Any]] = None,
-        ent_weight: float = 1e-3,
-        l2_weight: float = 0.0,
-        device: Union[str, th.device] = "auto",
-        custom_logger: Optional[logger.HierarchicalLogger] = None,
+            self,
+            *,
+            observation_space: gym.Space,
+            action_space: gym.Space,
+            policy: Optional[policies.BasePolicy] = None,
+            demonstrations: Optional[algo_base.AnyTransitions] = None,
+            batch_size: int = 32,
+            optimizer_cls: Type[th.optim.Optimizer] = th.optim.Adam,
+            optimizer_kwargs: Optional[Mapping[str, Any]] = None,
+            ent_weight: float = 1e-3,
+            l2_weight: float = 0.0,
+            device: Union[str, th.device] = "auto",
+            custom_logger: Optional[logger.HierarchicalLogger] = None,
     ):
         """Builds BC.
 
@@ -270,9 +270,9 @@ class BC(algo_base.DemonstrationAlgorithm):
         )
 
     def _calculate_loss(
-        self,
-        obs: Union[th.Tensor, np.ndarray],
-        acts: Union[th.Tensor, np.ndarray],
+            self,
+            obs: Union[th.Tensor, np.ndarray],
+            acts: Union[th.Tensor, np.ndarray],
     ) -> Tuple[th.Tensor, Mapping[str, float]]:
         """Calculate the supervised learning loss used to train the behavioral clone.
 
@@ -317,17 +317,17 @@ class BC(algo_base.DemonstrationAlgorithm):
         return loss, stats_dict
 
     def train(
-        self,
-        *,
-        n_epochs: Optional[int] = None,
-        n_batches: Optional[int] = None,
-        on_epoch_end: Callable[[], None] = None,
-        on_batch_end: Callable[[], None] = None,
-        log_interval: int = 500,
-        log_rollouts_venv: Optional[vec_env.VecEnv] = None,
-        log_rollouts_n_episodes: int = 5,
-        progress_bar: bool = True,
-        reset_tensorboard: bool = False,
+            self,
+            *,
+            n_epochs: Optional[int] = None,
+            n_batches: Optional[int] = None,
+            on_epoch_end: Callable[[], None] = None,
+            on_batch_end: Callable[[], None] = None,
+            log_interval: int = 500,
+            log_rollouts_venv: Optional[vec_env.VecEnv] = None,
+            log_rollouts_n_episodes: int = 5,
+            progress_bar: bool = True,
+            reset_tensorboard: bool = False,
     ):
         """Train with supervised learning for some number of epochs.
 
@@ -393,7 +393,7 @@ class BC(algo_base.DemonstrationAlgorithm):
                     stats = rollout.rollout_stats(trajs)
                     self.logger.record("batch_size", len(batch["obs"]))
                     for k, v in stats.items():
-                        if "return" in k and "monitor" not in k:
+                        if ("return" in k or "success" in k) and "monitor" not in k:
                             self.logger.record("rollout/" + k, v)
                 self.logger.dump(self.tensorboard_step)
             batch_num += 1

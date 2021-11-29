@@ -441,6 +441,13 @@ def rollout_stats(
         # monitor_return_len may be < n_traj when infos is sometimes missing
         out_stats["monitor_return_len"] = len(traj_descriptors["monitor_return"])
 
+    # patrick edit: also record success rate (if any step returns sucess)
+    successes = []
+    for traj in trajectories:
+        successful = float(np.any([step["is_success"] for step in traj.infos]))
+        successes.append(successful)
+    traj_descriptors["success"] = successes
+
     stat_names = ["min", "mean", "std", "max"]
     for desc_name, desc_vals in traj_descriptors.items():
         for stat_name in stat_names:

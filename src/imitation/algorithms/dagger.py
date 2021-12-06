@@ -610,6 +610,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 `self.venv` by default. If neither of the `n_epochs` and `n_batches`
                 keys are provided, then `n_epochs` is set to `self.DEFAULT_N_EPOCHS`.
         """
+        total_episode_count = 0
         total_timestep_count = 0
         round_num = 0
 
@@ -647,7 +648,9 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 total_timestep_count += len(traj)
 
             round_episode_count += len(trajectories)
-
+            # patrick edit: track total num episodes
+            total_episode_count += len(trajectories)
+            self._logger.record("dagger/total_episode_count", total_episode_count)
             self._logger.record("dagger/total_timesteps", total_timestep_count)
             self._logger.record("dagger/round_num", round_num)
             self._logger.record("dagger/round_episode_count", round_episode_count)

@@ -15,14 +15,13 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch as th
-from stable_baselines3.common import policies, utils, vec_env
-from torch.utils import data as th_data
-
 from imitation.algorithms import base, bc
 from imitation.data import rollout, types
 from imitation.data.rollout import _policy_to_callable
 from imitation.data.types import TrajectoryWithRew
 from imitation.util import logger, util
+from stable_baselines3.common import policies, utils, vec_env
+from torch.utils import data as th_data
 
 
 class BetaSchedule(abc.ABC):
@@ -632,8 +631,10 @@ class SimpleDAggerTrainer(DAggerTrainer):
 
             if replace_only_on_failure:
                 trajectories, round_expert = sample_traj_expert_on_fail(venv=self.venv, expert=self.expert_policy,
-                                                          learned_policy=self.bc_trainer.policy,
-                                                          sample_until=sample_until, deterministic_policy=True)
+                                                                        learned_policy=self.bc_trainer.policy,
+                                                                        sample_until=sample_until,
+                                                                        deterministic_policy=True,
+                                                                        round_num=self.round_num)
                 total_expert_count += round_expert
             else:
                 trajectories = rollout.generate_trajectories(
@@ -675,8 +676,10 @@ class SimpleDAggerTrainer(DAggerTrainer):
             round_num += 1
 
 
-def rollout_1_traj(venv, policy, deterministic_policy):
-    get_actions = _policy_to_callable(policy, venv, deterministic_policy)
+def rollout_1_traj(venv, policy, deterministic_policy, expert_policy=None, beta=None):
+    get_actions_policy = _policy_to_callable(policy, venv, deterministic_policy)
+    if expert_policy is not None:
+        get_actions_expert = _policy_to_callable(expert_policy, venv, deterministic_policy)
     all_obs = []
     all_acts = []
     all_rews = []
@@ -685,8 +688,18 @@ def rollout_1_traj(venv, policy, deterministic_policy):
     obs = venv.reset()
     all_obs.append(obs)
     done = False
+    expert_count = 0
     while not done:
-        acts = get_actions(obs)
+        if expert_policy is None:
+            acts = get_actions_policy(obs)
+        else:
+            # beta percent chance to query expert
+            if np.random.rand() > beta:
+                acts = get_actions_policy(obs)
+            else:
+                acts = get_actions_expert(obs)
+                expert_count+=1
+
         obs, rews, done, infos = venv.step(acts)
         all_obs.append(obs)
         all_acts.append(acts)
@@ -700,30 +713,28 @@ def rollout_1_traj(venv, policy, deterministic_policy):
     all_infos = np.array(all_infos).reshape(-1)
 
     trajectory = TrajectoryWithRew(obs=all_obs, acts=all_acts, rews=all_rews, infos=all_infos, terminal=done)
-    return trajectory
+    return trajectory, expert_count
 
 
-def sample_traj_expert_on_fail(venv, expert, learned_policy, sample_until, deterministic_policy):
+def sample_traj_expert_on_fail(venv, expert, learned_policy, sample_until, deterministic_policy, round_num):
     num_expert_demos = 0
     trajectories = []
     robot_env = venv.venv.venv.envs[0].env.env
+    beta_schedule = LinearBetaSchedule(40)
     # since only 1 env, idx is always 0
     while not sample_until(trajectories):
         # save rng
         rng_state = robot_env._rng.get_state()
-        candidate_traj = rollout_1_traj(venv, learned_policy, deterministic_policy)
+        candidate_traj,_ = rollout_1_traj(venv, learned_policy, deterministic_policy)
         successful = np.any([step["is_success"] for step in candidate_traj.infos])
         if successful:
             trajectories.append(candidate_traj)
         else:
             # repeat with same seed
             robot_env._rng.set_state(rng_state)
-            expert_traj = rollout_1_traj(venv, expert, deterministic_policy)
+            expert_traj, expert_count = rollout_1_traj(venv, learned_policy, deterministic_policy, expert_policy=expert,
+                                         beta=beta_schedule(round_num))
             trajectories.append(expert_traj)
-            num_expert_demos += len(expert_traj)
-
+            num_expert_demos += expert_count
 
     return trajectories, num_expert_demos
-
-
-

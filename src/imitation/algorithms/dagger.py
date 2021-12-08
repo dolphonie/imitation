@@ -20,6 +20,8 @@ from torch.utils import data as th_data
 
 from imitation.algorithms import base, bc
 from imitation.data import rollout, types
+from imitation.data.rollout import _policy_to_callable
+from imitation.data.types import TrajectoryWithRew
 from imitation.util import logger, util
 
 
@@ -66,10 +68,10 @@ class LinearBetaSchedule(BetaSchedule):
 
 
 def reconstruct_trainer(
-    scratch_dir: types.AnyPath,
-    venv: vec_env.VecEnv,
-    custom_logger: Optional[logger.HierarchicalLogger] = None,
-    device: Union[th.device, str] = "auto",
+        scratch_dir: types.AnyPath,
+        venv: vec_env.VecEnv,
+        custom_logger: Optional[logger.HierarchicalLogger] = None,
+        device: Union[th.device, str] = "auto",
 ) -> "DAggerTrainer":
     """Reconstruct trainer from the latest snapshot in some working directory.
 
@@ -96,9 +98,9 @@ def reconstruct_trainer(
 
 
 def _save_dagger_demo(
-    trajectory: types.Trajectory,
-    save_dir: types.AnyPath,
-    prefix: str = "",
+        trajectory: types.Trajectory,
+        save_dir: types.AnyPath,
+        prefix: str = "",
 ) -> None:
     # TODO(shwang): This is possibly redundant with types.save(). Note
     #   however that NPZ save here is likely more space efficient than
@@ -146,11 +148,11 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
     """
 
     def __init__(
-        self,
-        venv: vec_env.VecEnv,
-        get_robot_acts: Callable[[np.ndarray], np.ndarray],
-        beta: float,
-        save_dir: types.AnyPath,
+            self,
+            venv: vec_env.VecEnv,
+            get_robot_acts: Callable[[np.ndarray], np.ndarray],
+            beta: float,
+            save_dir: types.AnyPath,
     ):
         """Builds InteractiveTrajectoryCollector.
 
@@ -175,6 +177,7 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
         self._is_reset = False
         self._last_user_actions = None
         self.rng = np.random.RandomState()
+        self.expert_count = 0
 
     def seed(self, seed=Optional[int]) -> List[Union[None, int]]:
         """Set the seed for the DAgger random number generator and wrapped VecEnv.
@@ -232,6 +235,7 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
         actual_acts = np.array(actions)
 
         mask = self.rng.uniform(0, 1, size=(self.num_envs,)) > self.beta
+        self.expert_count += mask.size - np.sum(mask)
         if np.sum(mask) != 0:
             actual_acts[mask] = self.get_robot_acts(self._last_obs[mask])
 
@@ -299,13 +303,13 @@ class DAggerTrainer(base.BaseImitationAlgorithm):
     """The default number of BC training epochs in `extend_and_update`."""
 
     def __init__(
-        self,
-        *,
-        venv: vec_env.VecEnv,
-        scratch_dir: types.AnyPath,
-        beta_schedule: Callable[[int], float] = None,
-        bc_trainer: bc.BC,
-        custom_logger: Optional[logger.HierarchicalLogger] = None,
+            self,
+            *,
+            venv: vec_env.VecEnv,
+            scratch_dir: types.AnyPath,
+            beta_schedule: Callable[[int], float] = None,
+            bc_trainer: bc.BC,
+            custom_logger: Optional[logger.HierarchicalLogger] = None,
     ):
         """Builds DAggerTrainer.
 
@@ -519,13 +523,13 @@ class SimpleDAggerTrainer(DAggerTrainer):
     """Simpler subclass of DAggerTrainer for training with synthetic feedback."""
 
     def __init__(
-        self,
-        *,
-        venv: vec_env.VecEnv,
-        scratch_dir: types.AnyPath,
-        expert_policy: policies.BasePolicy,
-        expert_trajs: Optional[Sequence[types.Trajectory]] = None,
-        **dagger_trainer_kwargs,
+            self,
+            *,
+            venv: vec_env.VecEnv,
+            scratch_dir: types.AnyPath,
+            expert_policy: policies.BasePolicy,
+            expert_trajs: Optional[Sequence[types.Trajectory]] = None,
+            **dagger_trainer_kwargs,
     ):
         """Builds SimpleDAggerTrainer.
 
@@ -570,12 +574,13 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 )
 
     def train(
-        self,
-        total_timesteps: int,
-        *,
-        rollout_round_min_episodes: int = 3,
-        rollout_round_min_timesteps: int = 500,
-        bc_train_kwargs: Optional[dict] = None,
+            self,
+            total_timesteps: int,
+            *,
+            rollout_round_min_episodes: int = 3,
+            rollout_round_min_timesteps: int = 500,
+            bc_train_kwargs: Optional[dict] = None,
+            replace_only_on_failure: bool = False  # patrick edit
     ) -> None:
         """Train the DAgger agent.
 
@@ -610,8 +615,9 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 `self.venv` by default. If neither of the `n_epochs` and `n_batches`
                 keys are provided, then `n_epochs` is set to `self.DEFAULT_N_EPOCHS`.
         """
-        total_episode_count = 0
+        total_expert_count = 0
         total_timestep_count = 0
+        total_demo_count = 0
         round_num = 0
 
         while total_timestep_count < total_timesteps:
@@ -624,13 +630,18 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 min_episodes=rollout_round_min_episodes,
             )
 
-            trajectories = rollout.generate_trajectories(
-                policy=self.expert_policy,
-                venv=collector,
-                sample_until=sample_until,
-                deterministic_policy=True,
-                rng=collector.rng,
-            )
+            if replace_only_on_failure:
+                trajectories = sample_traj_expert_on_fail(venv=self.venv, expert=self.expert_policy,
+                                                          learned_policy=self.bc_trainer.policy,
+                                                          sample_until=sample_until, deterministic_policy=True)
+            else:
+                trajectories = rollout.generate_trajectories(
+                    policy=self.expert_policy,
+                    venv=collector,
+                    sample_until=sample_until,
+                    deterministic_policy=True,
+                    rng=collector.rng,
+                )
 
             for traj in trajectories:
                 _save_dagger_demo(traj, collector.save_dir)
@@ -647,10 +658,11 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 round_timestep_count += len(traj)
                 total_timestep_count += len(traj)
 
+            total_demo_count += len(trajectories)
             round_episode_count += len(trajectories)
             # patrick edit: track total num episodes
-            total_episode_count += len(trajectories)
-            self._logger.record("dagger/total_episode_count", total_episode_count)
+            total_expert_count += collector.expert_count
+            self._logger.record("dagger/total_expert_count", total_expert_count)
             self._logger.record("dagger/total_timesteps", total_timestep_count)
             self._logger.record("dagger/round_num", round_num)
             self._logger.record("dagger/round_episode_count", round_episode_count)
@@ -659,3 +671,53 @@ class SimpleDAggerTrainer(DAggerTrainer):
             # `logger.dump` is called inside BC.train within the following fn call:
             self.extend_and_update(bc_train_kwargs)
             round_num += 1
+
+
+def rollout_1_traj(venv, policy, deterministic_policy):
+    get_actions = _policy_to_callable(policy, venv, deterministic_policy)
+    all_obs = []
+    all_acts = []
+    all_rews = []
+    all_infos = []
+
+    obs = venv.reset()
+    all_obs.append(obs)
+    done = False
+    while not done:
+        acts = get_actions(obs)
+        obs, rews, done, infos = venv.step(acts)
+        all_obs.append(obs)
+        all_acts.append(acts)
+        all_rews.append(rews)
+        all_infos.append(infos)
+
+    # convert to numpy, removing extraneous dims
+    all_obs = np.array(all_obs).squeeze(1)
+    all_acts = np.array(all_acts).squeeze(1)
+    all_rews = np.array(all_rews).reshape(-1)
+    all_infos = np.array(all_infos).reshape(-1)
+
+    trajectory = TrajectoryWithRew(obs=all_obs, acts=all_acts, rews=all_rews, infos=all_infos, terminal=done)
+    return trajectory
+
+
+def sample_traj_expert_on_fail(venv, expert, learned_policy, sample_until, deterministic_policy):
+    trajectories = []
+    robot_env = venv.venv.venv.envs[0].env.env
+    # since only 1 env, idx is always 0
+    while not sample_until(trajectories):
+        # save rng
+        rng_state = robot_env._rng.get_state()
+        candidate_traj = rollout_1_traj(venv, learned_policy, deterministic_policy)
+        successful = np.any([step["is_success"] for step in candidate_traj.infos])
+        if successful:
+            trajectories.append(candidate_traj)
+        else:
+            # repeat with same seed
+            robot_env._rng.set_state(rng_state)
+            trajectories.append(rollout_1_traj(venv, expert, deterministic_policy))
+
+    return trajectories
+
+
+

@@ -631,9 +631,10 @@ class SimpleDAggerTrainer(DAggerTrainer):
             )
 
             if replace_only_on_failure:
-                trajectories = sample_traj_expert_on_fail(venv=self.venv, expert=self.expert_policy,
+                trajectories, round_expert = sample_traj_expert_on_fail(venv=self.venv, expert=self.expert_policy,
                                                           learned_policy=self.bc_trainer.policy,
                                                           sample_until=sample_until, deterministic_policy=True)
+                total_expert_count += round_expert
             else:
                 trajectories = rollout.generate_trajectories(
                     policy=self.expert_policy,
@@ -642,6 +643,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
                     deterministic_policy=True,
                     rng=collector.rng,
                 )
+                total_expert_count += collector.expert_count
 
             for traj in trajectories:
                 _save_dagger_demo(traj, collector.save_dir)
@@ -661,7 +663,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
             total_demo_count += len(trajectories)
             round_episode_count += len(trajectories)
             # patrick edit: track total num episodes
-            total_expert_count += collector.expert_count
+
             self._logger.record("dagger/total_expert_count", total_expert_count)
             self._logger.record("dagger/total_timesteps", total_timestep_count)
             self._logger.record("dagger/round_num", round_num)

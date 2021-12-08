@@ -702,6 +702,7 @@ def rollout_1_traj(venv, policy, deterministic_policy):
 
 
 def sample_traj_expert_on_fail(venv, expert, learned_policy, sample_until, deterministic_policy):
+    num_expert_demos = 0
     trajectories = []
     robot_env = venv.venv.venv.envs[0].env.env
     # since only 1 env, idx is always 0
@@ -715,9 +716,12 @@ def sample_traj_expert_on_fail(venv, expert, learned_policy, sample_until, deter
         else:
             # repeat with same seed
             robot_env._rng.set_state(rng_state)
-            trajectories.append(rollout_1_traj(venv, expert, deterministic_policy))
+            expert_traj = rollout_1_traj(venv, expert, deterministic_policy)
+            trajectories.append(expert_traj)
+            num_expert_demos += len(expert_traj)
 
-    return trajectories
+
+    return trajectories, num_expert_demos
 
 
 
